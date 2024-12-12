@@ -76,7 +76,8 @@ class MAGI_v2:
     2. User can overwrite the fitted values with exogenous values on their own.
     '''
     # function for modifying state variables + progressing with the fitting process.
-    def initial_fit(self, discretization : int, verbose=False):
+    def initial_fit(self, discretization : int, verbose=False, use_fourier_prior=True, phi_exo=None):
+        self.use_fourier_prior = use_fourier_prior
         
         # discretize our data
         self.I, self.X_obs_discret = self._discretize(self.ts_obs, self.X_obs, discretization)
@@ -100,8 +101,15 @@ class MAGI_v2:
         
         # interpolate our fully/partially-observed components + fit (phi1, phi2, sigma_sq)
         self.X_interp_obs = self._linear_interpolate(self.X_obs_discret[:, self.observed_indicators])
-        hparams_obs = self._fit_kernel_hparams(I=self.I, X_filled=self.X_interp_obs, verbose=verbose)
-        
+        if phi_exo is None:
+            hparams_obs = self._fit_kernel_hparams(I=self.I, X_filled=self.X_interp_obs, verbose=verbose)
+        else:
+            hparams_obs = {
+                'phi1s': phi_exo['phi1s'][self.observed_indicators],
+                'phi2s': phi_exo['phi2s'][self.observed_indicators],
+                'sigma_sqs': phi_exo['sigma_sqs'][self.observed_indicators]
+            }
+
         # populate our hparams + initialize Xhat for the observed components
         self.phi1s[self.observed_indicators] = hparams_obs["phi1s"]
         self.phi2s[self.observed_indicators] = hparams_obs["phi2s"]
@@ -245,7 +253,15 @@ class MAGI_v2:
             self.thetas_init = thetas_var.numpy().copy()
             
             # fit kernel + sigma_sq hparams for unobserved components. Populate our model variables.
-            hparams_unobs = self._fit_kernel_hparams(I=self.I, X_filled=self.X_interp_unobs, verbose=verbose)
+            if phi_exo is None:
+                hparams_unobs = self._fit_kernel_hparams(I=self.I, X_filled=self.X_interp_unobs, verbose=verbose)
+            else:
+                hparams_unobs = {
+                    'phi1s': phi_exo['phi1s'][self.unobserved_components],
+                    'phi2s': phi_exo['phi2s'][self.unobserved_components],
+                    'sigma_sqs': phi_exo['sigma_sqs'][self.unobserved_components]
+                }
+
             self.phi1s[self.unobserved_components] = hparams_unobs["phi1s"]
             self.phi2s[self.unobserved_components] = hparams_unobs["phi2s"]
             self.sigma_sqs_init[self.unobserved_components] = hparams_unobs["sigma_sqs"]
@@ -279,7 +295,7 @@ class MAGI_v2:
     2. Can specify number of burn-in + actual samples.
     '''
     # note that tqdm is not permissible because violates XLA-environment + tf.function.
-    def predict(self, num_results: int = 1000, num_burnin_steps: int = 1000, sigma_sqs_LB=None, verbose=False):
+    def predict(self, num_results: int = 1000, num_burnin_steps: int = 1000, sigma_sqs_LB=None, tempering=False, verbose=False):
         
         # make sure we are ready to do inference (i.e., no NaNs in initializations)
         assert ~np.any(np.isnan(self.Xhat_init)), "Please make sure Xhat_init does not have NaNs."
@@ -296,7 +312,7 @@ class MAGI_v2:
             sigma_sqs_LB = ((self.Xhat_init.std(axis=0)) * 0.01) ** 2
         
         '''
-        As of 11/25/2024, we will use temperature annealing to encourage more initial exploration.
+        As of 11/25/2024, we will use optional temperature annealing to encourage more initial exploration.
         - Will also constrain sigma_sq values to be at least sigma_sq_LB using softplus bijector.
         - Will also constrain theta values to be positive for now using softplus bijector.
         '''
@@ -343,7 +359,11 @@ class MAGI_v2:
             return beta_temp * ( -0.5 * ( ((1.0 / beta) * (t1 + t2)) + (t3 + t4)) + log_jacobian_sigma_sqs + log_jacobian_thetas)
         
         
-        # need to create a helper function to let NUTS know it's a 3-variable input.
+        # wrapper function if not doing any log-posterior tempering
+        def unnormalized_log_prob_no_temp(X, sigma_sqs_pre, thetas_pre):
+            return unnormalized_log_prob(X, sigma_sqs_pre, thetas_pre, beta_temp=1.0)
+        
+        # need to create a helper function to let NUTS know initially it's a 3-variable input.
         def init_tempered_log_prob(X, sigma_sqs_pre, thetas, beta_temp):
             return unnormalized_log_prob(X, sigma_sqs_pre, thetas, beta_temp=beta_temp)
         
@@ -359,10 +379,19 @@ class MAGI_v2:
             num_adaptation_steps=int(0.8 * num_burnin_steps),
             target_accept_prob=0.75)
         
-        # wrap the above with our temperature-controlled custom kernel setup.
-        annealed_sampler = LogAnnealedNUTS(base_kernel=adaptive_sampler, 
-                                           num_steps=num_burnin_steps + num_results,
-                                           unnormalized_log_prob=unnormalized_log_prob)      
+        # initialize our final sampler based on whether we are doing log-tempering or not
+        if tempering:
+        
+            # wrap the above with our temperature-controlled custom kernel setup.
+            final_sampler = LogAnnealedNUTS(base_kernel=adaptive_sampler, 
+                                            num_steps=num_burnin_steps + num_results,
+                                            unnormalized_log_prob=unnormalized_log_prob)  
+        
+        # just use standard NUTS + DualAveraging Step-Size Adaptation
+        else:
+            
+            # keep it as the same
+            final_sampler = adaptive_sampler
         
         # set up our initial state, i.e., our current state (note the softplus inverse bijection)
         sigma_sqs_pre_init = np.full_like(a=self.sigma_sqs_init, fill_value=-5.0) # filling with something small by default.
@@ -383,7 +412,7 @@ class MAGI_v2:
                 num_results=num_results,
                 num_burnin_steps=num_burnin_steps,
                 current_state=initial_state,
-                kernel=annealed_sampler,
+                kernel=final_sampler,
                 trace_fn=lambda _, pkr: pkr
             )
             return samples, kernel_results
@@ -404,8 +433,11 @@ class MAGI_v2:
         # package everything into a dictionary as output
         results = {"phi1s" : self.phi1s, "phi2s" : self.phi2s, 
                    "Xhat_init" : self.Xhat_init, 
-                   "sigma_sqs_init" : self.sigma_sqs_init, 
-                   "thetas_init" : self.thetas_init, 
+                   "sigma_sqs_LB" : sigma_sqs_LB,
+                   "sigma_sqs_init" : self.sigma_sqs_init,
+                   "sigma_sqs_init_constrained" : tf.math.log(1.0 + tf.math.exp(sigma_sqs_pre_init)) + sigma_sqs_LB, 
+                   "thetas_init" : self.thetas_init,
+                   "thetas_init_constrained" : tf.math.log(1.0 + tf.math.exp(thetas_pre_init)).numpy(), 
                    "I" : self.I, 
                    "X_samps" : samples[0].numpy(), 
                    "sigma_sqs_samps" : np.log(np.exp(samples[1].numpy()) + 1.0) + sigma_sqs_LB, 
@@ -599,26 +631,31 @@ class MAGI_v2:
         2. Resolve by noting that for Normal / TruncatedNormal, scaling LLH by 1/D ~ scaling Normal variance by D.
         3. gpjm.log_prob() is a D_observed x D_observed matrix of partial derivatives. We can take TRACE!
         '''
+
+        #### 3. CHOOSE PRIOR FOR PHI2 BASED ON FLAG
+        if not self.use_fourier_prior:
+            # Flat prior for phi2 (mean = 1.0, large variance)
+            mu_phi2s = np.full(D_filled, 1.0)
+            sd_phi2s = np.full(D_filled, 1000.0)
+
         # constructing a sampleable-object to pass into TFP optimization
-        gpjm = tfd.JointDistributionNamed({"phi1s" : 
-                                           tfd.TruncatedNormal(loc=np.float64([1e-4] * D_filled), 
-                                                               low=np.float64([1e-6] * D_filled), 
-                                                               high=np.float64([np.inf] * D_filled),
-                                                               scale=np.float64([1000.0 * np.sqrt(D_filled)]\
-                                                                                * D_filled)), # flat prior
-                                           "sigma_sqs" : 
-                                           tfd.TruncatedNormal(loc=np.float64( ((X_filled.std(axis=0)) * 0.1 ) ** 2), 
-                                                               low=np.float64([1e-6] * D_filled), 
-                                                               high=np.float64([np.inf] * D_filled),
-                                                               scale=np.float64([1000.0 * np.sqrt(D_filled)]\
-                                                                                * D_filled)), # flat prior
-                                           "phi2s" : 
-                                           tfd.TruncatedNormal(loc=np.float64(mu_phi2s), 
-                                                               low=np.float64([1e-6] * D_filled), 
-                                                               high=np.float64([np.inf] * D_filled),
-                                                               scale=np.float64(sd_phi2s\
-                                                                                * np.sqrt(D_filled))), # Fourier-informed prior
-                                           "observations" : build_gps})
+        gpjm = tfd.JointDistributionNamed(
+            {"phi1s" :
+                 tfd.TruncatedNormal(loc=np.float64([1e-4] * D_filled),
+                                     low=np.float64([1e-6] * D_filled),
+                                     high=np.float64([np.inf] * D_filled),
+                                     scale=np.float64([1000.0 * np.sqrt(D_filled)] * D_filled)), # flat prior
+             "sigma_sqs" :
+                 tfd.TruncatedNormal(loc=np.float64( ((X_filled.std(axis=0)) * 0.1 ) ** 2),
+                                     low=np.float64([1e-6] * D_filled),
+                                     high=np.float64([np.inf] * D_filled),
+                                     scale=np.float64([1000.0 * np.sqrt(D_filled)] * D_filled)), # flat prior
+             "phi2s" :
+                 tfd.TruncatedNormal(loc=np.float64(mu_phi2s),
+                                     low=np.float64([1e-6] * D_filled),
+                                     high=np.float64([np.inf] * D_filled),
+                                     scale=np.float64(sd_phi2s * np.sqrt(D_filled))),
+             "observations" : build_gps})
 
         # define our TO-BE-TRAINABLE variables + constrain them to be positive, and then make them positive.
         phi1s_var = tfp.util.TransformedVariable(initial_value=X_filled.std(axis=0) ** 2, 
@@ -644,7 +681,7 @@ class MAGI_v2:
                                 "sigma_sqs": sigma_sqs, 
                                 "phi2s": phi2s, 
                                 "observations": X_filled_bcst})
-        num_iters = 1000; optimizer = tf_keras.optimizers.Adam(learning_rate=.01)
+        num_iters = 100; optimizer = tf_keras.optimizers.Adam(learning_rate=.01)
 
         # taking one step of Adam + scaling up to train our model
         @tf.function(autograph=True, jit_compile=True)
@@ -785,7 +822,7 @@ class MAGI_v2:
         Kappa *= (l ** v)
 
         # https://en.wikipedia.org/wiki/Mat%C3%A9rn_covariance_function
-        np.fill_diagonal(Kappa, val=phi1) # behavior as |s-t| \to 0^+
+        np.fill_diagonal(Kappa, val=phi1 + phi1 * 1e-6) # behavior as |s-t| \to 0^+
 
         # 2. p_Kappa, but need to replace everywhere with l=|s-t|=0 to have value 0.0.
         p_Kappa = (2 ** (1 - (v/2)))
@@ -805,7 +842,7 @@ class MAGI_v2:
         Kappa_pp /= ( (phi2 ** 2) * (l ** 2) * gamma(v) )
 
         # CHECK WITH PROF. YANG ABOUT THIS ONE! SHOULD THERE BE A NEGATIVE HERE?
-        np.fill_diagonal(Kappa_pp, val=v*phi1/( (phi2 ** 2) * (v-1) )) # behavior as |s-t| \to 0^+
+        np.fill_diagonal(Kappa_pp, val=v*phi1/( (phi2 ** 2) * (v-1) ) * (1 + 1e-6)) # behavior as |s-t| \to 0^+
 
         # 5. form our C, m, and K matrices (let's not do any band approximations yet!)
         C_d, Kappa_inv = Kappa.copy(), np.linalg.pinv(Kappa)
