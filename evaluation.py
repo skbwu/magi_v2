@@ -99,7 +99,7 @@ def summarize_simulation_results(results_dir, true_params, observed_time_points)
     - pd.DataFrame: Summary table with RMSE and parameter errors for each simulation.
     """
     summary = []
-    true_R0 = true_params[0] / (true_params[1] + true_params[2])  # R0 = beta / (gamma + sigma)
+    true_R0 = true_params[0] / (true_params[1])  # R0 = beta / (gamma)
     true_params = np.concatenate([true_params, [true_R0]])
 
     # Iterate through each simulation directory
@@ -132,7 +132,7 @@ def summarize_simulation_results(results_dir, true_params, observed_time_points)
                 beta_samples = thetas_samps[:, 0]
                 gamma_samples = thetas_samps[:, 1]
                 sigma_samples = thetas_samps[:, 2]
-                R0_samples = beta_samples / (gamma_samples + sigma_samples)
+                R0_samples = beta_samples / gamma_samples
                 thetas_samps = np.hstack([thetas_samps, R0_samples.reshape(-1, 1)])
 
                 param_errors = compute_parameter_error(true_params, thetas_samps)
