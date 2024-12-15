@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import matplotlib.pyplot as plt
 
 def plot_trajectories(ts_true, x_true, results, ts_obs, X_obs, trans_func=lambda x: x, caption_text="", output_dir=None):
@@ -94,6 +95,7 @@ def plot_trace(thetas_samps, true_values=None, param_names=["$\\beta$", "$\\gamm
     plt.tight_layout()
 
     if output_dir:
+        os.makedirs(f"{output_dir}", exist_ok=True)
         plt.savefig(f"{output_dir}/{caption_text.replace(' ', '_')}.png")
     else:
         plt.show()
