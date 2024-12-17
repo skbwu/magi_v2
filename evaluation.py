@@ -417,6 +417,7 @@ def visualize_forecast_means(results_dir, observed_time_points, output_dir="visu
     plt.savefig(os.path.join(output_dir, f"orig_aggregated_forecast_with_true_and_sample_obs.png"))
     plt.close()
     print(f"Aggregated forecast figure saved to {output_dir}")
+    return plot_df, true_forecast, ts_obs, example_observations
 
 
 def compute_coverage(true_params, inferred_samples, confidence_level=95):

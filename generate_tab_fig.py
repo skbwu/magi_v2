@@ -23,7 +23,18 @@ summary_df_print = summary_df.copy()
 summary_df_print.columns = [x.replace('_', ' ') for x in summary_df_print.columns]
 
 generate_latex_table(summary_df_print, "summary_table.tex")
-visualize_forecast_means(results_dir, observed_time_points, results_dir)
+plot_df, true_forecast, ts_obs, example_observations = visualize_forecast_means(results_dir, observed_time_points, results_dir)
+import pickle
+save_dict = {
+    'summary_df': summary_df,
+    'plot_df': plot_df,
+    'true_forecast': true_forecast,
+    'ts_obs': ts_obs,
+    'example_observations': example_observations
+}
+with open(f'{results_dir}/seir_magi_plot_data.pkl', 'wb') as f:
+    pickle.dump(save_dict, f)
+
 
 import matplotlib.pyplot as plt
 
