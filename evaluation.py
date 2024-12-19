@@ -145,12 +145,12 @@ def summarize_simulation_results(results_dir, true_params, observed_time_points)
                 sigma_samples = thetas_samps[:, 2]
                 R0_samples = beta_samples / gamma_samples
                 thetas_samps = np.hstack([thetas_samps, R0_samples.reshape(-1, 1), peak_timing.reshape(-1, 1), peak_intensity.reshape(-1, 1)])
-                true_params = np.concatenate([true_params, [peak_timing_true, peak_intensity_true]])
+                true_params_local = np.concatenate([true_params, [peak_timing_true, peak_intensity_true]])
 
-                param_errors = compute_parameter_error(true_params, thetas_samps)
+                param_errors = compute_parameter_error(true_params_local, thetas_samps)
 
                 # Compute parameter coverage
-                coverage = compute_coverage(true_params, thetas_samps, confidence_level=95)
+                coverage = compute_coverage(true_params_local, thetas_samps, confidence_level=95)
 
                 # Append results to summary
                 summary.append({
