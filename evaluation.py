@@ -454,7 +454,7 @@ def compute_coverage(true_params, inferred_samples, confidence_level=95):
     lower_percentile = (100 - confidence_level) / 2
     upper_percentile = 100 - lower_percentile
     coverage = {}
-    for i, param in enumerate(['Beta', 'Gamma', 'Sigma', 'R0']):
+    for i, param in enumerate(['Beta', 'Gamma', 'Sigma', 'R0', 'Peak_Timing', 'Peak_Intensity']):
         lower = np.percentile(inferred_samples[:, i], lower_percentile)
         upper = np.percentile(inferred_samples[:, i], upper_percentile)
         is_covered = lower <= true_params[i] <= upper
