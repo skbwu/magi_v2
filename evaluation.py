@@ -131,10 +131,11 @@ def summarize_simulation_results(results_dir, true_params, observed_time_points)
                 peak_timing = np.argmax(I_samps, axis=1)
                 peak_timing = results['I'].flatten()[peak_timing]
                 peak_intensity = np.max(I_samps, axis=1)
+                peak_intensity = np.exp(peak_intensity)
 
-                peak_timing_true = np.argmax(x_true[:, 1])
+                peak_timing_true = np.argmax(x_true.iloc[:, 1])
                 peak_timing_true = ts_true[peak_timing_true]
-                peak_intensity_true = np.max(x_true[:, 1])
+                peak_intensity_true = np.exp(np.max(x_true.iloc[:, 1]))
 
                 # Compute parameter estimation errors
                 thetas_samps = results["thetas_samps"]  # Shape (num_samples, P)
