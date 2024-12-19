@@ -127,10 +127,10 @@ def summarize_simulation_results(results_dir, true_params, observed_time_points)
                 rmse_log = compute_log_rmse(x_true.loc[observed_indices_in_true, :], X_samps[:, observed_indices_in_I, :])
                 rmse_orig = compute_log_rmse(np.exp(x_true.loc[observed_indices_in_true, :]), np.exp(X_samps[:, observed_indices_in_I, :]))
 
-                I_samps = X_samps[:, :, 1]  # Shape (num_samples, T)
-                peak_timing = np.argmax(I_samps, axis=1)
-                peak_timing = results['I'].flatten()[peak_timing]
-                peak_intensity = np.max(I_samps, axis=1)
+                I_samps_forecast = results_forecast["X_samps"][:, :, 1]  # Shape (num_samples, T)
+                peak_timing = np.argmax(I_samps_forecast, axis=1)
+                peak_timing = results_forecast['I'].flatten()[peak_timing]
+                peak_intensity = np.max(I_samps_forecast, axis=1)
                 peak_intensity = np.exp(peak_intensity)
 
                 peak_timing_true = np.argmax(x_true.iloc[:, 1])
