@@ -125,6 +125,7 @@ def summarize_simulation_results(results_dir, true_params, observed_time_points)
                 # Compute RMSE on log scale
                 X_samps = results["X_samps"]  # Shape (num_samples, T, D)
                 rmse_log = compute_log_rmse(x_true.loc[observed_indices_in_true, :], X_samps[:, observed_indices_in_I, :])
+                rmse_orig = compute_log_rmse(np.exp(x_true.loc[observed_indices_in_true, :]), np.exp(X_samps[:, observed_indices_in_I, :]))
 
                 # Compute parameter estimation errors
                 thetas_samps = results["thetas_samps"]  # Shape (num_samples, P)
@@ -146,6 +147,9 @@ def summarize_simulation_results(results_dir, true_params, observed_time_points)
                     "RMSE_logE": rmse_log[0],
                     "RMSE_logI": rmse_log[1],
                     "RMSE_logR": rmse_log[2],
+                    "RMSE_E": rmse_orig[0],
+                    "RMSE_I": rmse_orig[1],
+                    "RMSE_R": rmse_orig[2],
                     "Beta_Error": param_errors[0],
                     "Gamma_Error": param_errors[1],
                     "Sigma_Error": param_errors[2],
