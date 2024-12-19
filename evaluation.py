@@ -127,6 +127,15 @@ def summarize_simulation_results(results_dir, true_params, observed_time_points)
                 rmse_log = compute_log_rmse(x_true.loc[observed_indices_in_true, :], X_samps[:, observed_indices_in_I, :])
                 rmse_orig = compute_log_rmse(np.exp(x_true.loc[observed_indices_in_true, :]), np.exp(X_samps[:, observed_indices_in_I, :]))
 
+                I_samps = X_samps[:, :, 1]  # Shape (num_samples, T)
+                peak_timing = np.argmax(I_samps, axis=1)
+                peak_timing = results['I'].flatten()[peak_timing]
+                peak_intensity = np.max(I_samps, axis=1)
+
+                peak_timing_true = np.argmax(x_true[:, 1])
+                peak_timing_true = ts_true[peak_timing_true]
+                peak_intensity_true = np.max(x_true[:, 1])
+
                 # Compute parameter estimation errors
                 thetas_samps = results["thetas_samps"]  # Shape (num_samples, P)
 
@@ -134,7 +143,8 @@ def summarize_simulation_results(results_dir, true_params, observed_time_points)
                 gamma_samples = thetas_samps[:, 1]
                 sigma_samples = thetas_samps[:, 2]
                 R0_samples = beta_samples / gamma_samples
-                thetas_samps = np.hstack([thetas_samps, R0_samples.reshape(-1, 1)])
+                thetas_samps = np.hstack([thetas_samps, R0_samples.reshape(-1, 1), peak_timing.reshape(-1, 1), peak_intensity.reshape(-1, 1)])
+                true_params = np.concatenate([true_params, [peak_timing_true, peak_intensity_true]])
 
                 param_errors = compute_parameter_error(true_params, thetas_samps)
 
@@ -154,10 +164,14 @@ def summarize_simulation_results(results_dir, true_params, observed_time_points)
                     "Gamma_Error": param_errors[1],
                     "Sigma_Error": param_errors[2],
                     "R0_Error": param_errors[3],
+                    "Peak_Timing_Error": param_errors[4],
+                    "Peak_Intensity_Error": param_errors[5],
                     "Beta_Coverage": coverage["Beta_Coverage"],
                     "Gamma_Coverage": coverage["Gamma_Coverage"],
                     "Sigma_Coverage": coverage["Sigma_Coverage"],
-                    "R0_Coverage": coverage["R0_Coverage"]
+                    "R0_Coverage": coverage["R0_Coverage"],
+                    "Peak_Timing_Coverage": coverage["Peak_Timing_Coverage"],
+                    "Peak_Intensity_Coverage": coverage["Peak_Intensity_Coverage"],
                 })
 
     # Convert summary to DataFrame
